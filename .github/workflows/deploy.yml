@@ -23,31 +23,17 @@ jobs:
           pip install -r requirements.txt
           pip list
           
-      - name: Install Heroku CLI
-        run: |
-          curl https://cli-assets.heroku.com/install.sh | sh
-          
-      - name: Deploy to Heroku
+      - name: Deploy directly to Heroku
         uses: akhileshns/heroku-deploy@v3.12.12
         with:
           heroku_api_key: ${{ secrets.HEROKU_API_KEY }}
           heroku_app_name: ${{ secrets.HEROKU_APP_NAME }}
           heroku_email: ${{ secrets.HEROKU_EMAIL }}
-          
-      - name: Set Heroku config vars
-        env:
-          HEROKU_API_KEY: ${{ secrets.HEROKU_API_KEY }}
-        run: |
-          heroku config:set CODA_API_TOKEN=${{ secrets.CODA_API_TOKEN }} --app ${{ secrets.HEROKU_APP_NAME }}
-          heroku config:set MAIN_DOC_URL=${{ secrets.MAIN_DOC_URL }} --app ${{ secrets.HEROKU_APP_NAME }}
-          heroku config:set STUDENT_DOC_URL=${{ secrets.STUDENT_DOC_URL }} --app ${{ secrets.HEROKU_APP_NAME }}
-          
-      - name: Run database migrations
-        env:
-          HEROKU_API_KEY: ${{ secrets.HEROKU_API_KEY }}
-        run: heroku run python app.py --app ${{ secrets.HEROKU_APP_NAME }}
-        
-      - name: Start worker process
-        env:
-          HEROKU_API_KEY: ${{ secrets.HEROKU_API_KEY }}
-        run: heroku ps:scale worker=1 --app ${{ secrets.HEROKU_APP_NAME }} 
+          usedocker: false
+          stack: "heroku-22"
+          procfile: "web: gunicorn app:app\nworker: python automation_runner.py"
+          healthcheck: "https://${{ secrets.HEROKU_APP_NAME }}.herokuapp.com/health"
+          env: 
+            CODA_API_TOKEN: ${{ secrets.CODA_API_TOKEN }}
+            MAIN_DOC_URL: ${{ secrets.MAIN_DOC_URL }}
+            STUDENT_DOC_URL: ${{ secrets.STUDENT_DOC_URL }} 
