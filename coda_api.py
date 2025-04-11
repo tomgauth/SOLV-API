@@ -1,114 +1,118 @@
 import os
+from dotenv import load_dotenv
+from codaio import Coda
 import logging
-import requests
-from typing import Dict, List, Optional, Tuple
 
 # Configure logging
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s'
+)
 logger = logging.getLogger(__name__)
 
 class CodaAPI:
-    def __init__(self, api_token: str):
-        self.api_token = api_token
-        self.base_url = "https://coda.io/apis/v1"
-        self.headers = {
-            "Authorization": f"Bearer {self.api_token}",
-            "Content-Type": "application/json"
-        }
-
-    def extract_ids(self, url: str) -> Tuple[str, str]:
-        """Extract document ID and table ID from Coda URL"""
-        doc_id = url.split('/d/')[1].split('/')[0]
-        table_id = url.split('#')[1].split('_')[1]
-        return doc_id, table_id
-
-    def get_table_data(self, doc_id: str, table_id: str) -> Dict:
-        """Fetch data from a Coda table"""
-        url = f"{self.base_url}/docs/{doc_id}/tables/{table_id}/rows"
+    def __init__(self, api_token):
+        self.coda = Coda(api_key=api_token)
         
+        # Constants for the main Clients table
+        self.MAIN_DOC_ID = "9omNdUhI4j"           # Main document ID containing the Clients table
+        self.CLIENTS_TABLE_ID = "grid-PZqFjHZRk_"   # Clients table ID
+
+        # Column IDs for the Clients table
+        self.COL_FIRST_NAME = "c-B5jqLzoe_x"
+        self.COL_LAST_NAME = "c-_WlEd-pWCg"
+        self.COL_CLIENT_DOC_ID = "c-jJ9R5VVvz0"  # The student's document ID
+        self.COL_SENTENCES_TABLE = "c-oN98cuRpc1"  # The student's sentences table ID
+        self.COL_NUM_SENTENCES = "c-JfGAyru56_"  # The column to update with the count
+        self.COL_DOC_URL = "c-5b3Ye-Mf5S"   # The URL to the student's document (not used here)
+
+    def sync_clients_sentence_counts(self):
+        """Sync sentence counts for all clients."""
         try:
-            response = requests.get(url, headers=self.headers)
-            response.raise_for_status()
-            return response.json()
-        except requests.exceptions.RequestException as e:
-            logger.error(f"Error fetching data from Coda: {str(e)}")
-            raise
-
-    def update_table_data(self, doc_id: str, table_id: str, data: Dict) -> Dict:
-        """Update data in a Coda table"""
-        url = f"{self.base_url}/docs/{doc_id}/tables/{table_id}/rows"
-        
-        try:
-            response = requests.post(url, headers=self.headers, json=data)
-            response.raise_for_status()
-            return response.json()
-        except requests.exceptions.RequestException as e:
-            logger.error(f"Error updating data in Coda: {str(e)}")
-            raise
-
-    def update_row(self, doc_id: str, table_id: str, row_id: str, values: Dict) -> Dict:
-        """Update a specific row in a Coda table"""
-        url = f"{self.base_url}/docs/{doc_id}/tables/{table_id}/rows/{row_id}"
-        
-        # Convert values dict to cells array format
-        cells = [{"column": col_id, "value": value} for col_id, value in values.items()]
-        
-        try:
-            response = requests.put(url, headers=self.headers, json={"row": {"cells": cells}})
-            response.raise_for_status()
-            return response.json()
-        except requests.exceptions.RequestException as e:
-            logger.error(f"Error updating row in Coda: {str(e)}")
-            raise
-
-    def sync_student_data(self, main_doc_id: str, main_table_id: str) -> Dict:
-        """Sync data from all student tables to the main table"""
-        try:
-            # Get all rows from main table
-            main_table_data = self.get_table_data(main_doc_id, main_table_id)
-            if not main_table_data.get('items'):
-                return {"status": "error", "message": "No rows found in main table"}
-
-            results = []
-            for row in main_table_data['items']:
-                # Extract student doc and table IDs from the row
-                cells = {cell['column']: cell['value'] for cell in row['cells']}
-                student_doc_id = cells.get('c-JfGAyru56_', '').split('/d/')[-1]
-                student_table_id = cells.get('c-oN98cuRpc1', '')
-                
-                if not student_doc_id or not student_table_id:
-                    logger.warning(f"Skipping row {row['id']} - missing doc_id or table_id")
-                    continue
-
-                # Get student table data
-                student_data = self.get_table_data(student_doc_id, student_table_id)
-                num_sentences = len(student_data.get('items', []))
-
-                # Update the main table row
-                values = {
-                    "c-B5jqLzoe_x": cells.get('c-B5jqLzoe_x', ''),  # first_name
-                    "c-_WlEd-pWCg": cells.get('c-_WlEd-pWCg', ''),  # last_name
-                    "c-jJ9R5VVvz0": str(num_sentences),  # num_sentences
-                    "c-JfGAyru56_": cells.get('c-JfGAyru56_', ''),  # doc_id
-                    "c-oN98cuRpc1": cells.get('c-oN98cuRpc1', '')   # sentences_table_id
-                }
-
-                result = self.update_row(main_doc_id, main_table_id, row['id'], values)
-                results.append({
-                    "row_id": row['id'],
-                    "num_sentences": num_sentences,
-                    "update_result": result
-                })
-
-            return {
-                "status": "success",
-                "message": "Data synced successfully",
-                "details": results
+            # Retrieve the main Clients table data
+            clients_data = self.coda.list_rows(doc_id=self.MAIN_DOC_ID, table_id_or_name=self.CLIENTS_TABLE_ID)
+            
+            results = {
+                'total_rows_processed': 0,
+                'rows_updated': 0,
+                'errors': 0,
+                'details': []
             }
 
+            # Iterate through each row in the Clients table
+            for row in clients_data.get("items", []):
+                row_id = row.get("id")
+                values = row.get("values", {})
+                results['total_rows_processed'] += 1
+
+                # Get the student's document ID and their sentences table ID from the row values.
+                student_doc_id = values.get(self.COL_CLIENT_DOC_ID)
+                sentences_table_id = values.get(self.COL_SENTENCES_TABLE)
+
+                if not sentences_table_id:
+                    results['errors'] += 1
+                    results['details'].append({
+                        'row_id': row_id,
+                        'error': 'Missing sentences_table_id'
+                    })
+                    continue
+
+                if not student_doc_id:
+                    results['errors'] += 1
+                    results['details'].append({
+                        'row_id': row_id,
+                        'error': 'Missing client_doc_id'
+                    })
+                    continue
+
+                try:
+                    # Fetch the student's sentences table data from their document
+                    sentences_data = self.coda.list_rows(doc_id=student_doc_id, table_id_or_name=sentences_table_id)
+                    
+                    # Count the number of rows (each row represents a sentence)
+                    sentence_count = len(sentences_data.get("items", []))
+
+                    # Prepare the payload to update the 'num_sentences' column in the Clients table
+                    update_payload = {
+                        "row": {
+                            "cells": [
+                                {"column": self.COL_NUM_SENTENCES, "value": sentence_count}
+                            ]
+                        }
+                    }
+
+                    # Update the client's row in the main Clients table
+                    self.coda.update_row(
+                        doc_id=self.MAIN_DOC_ID,
+                        table_id_or_name=self.CLIENTS_TABLE_ID,
+                        row_id_or_name=row_id,
+                        data=update_payload
+                    )
+                    
+                    results['rows_updated'] += 1
+                    results['details'].append({
+                        'row_id': row_id,
+                        'student_doc_id': student_doc_id,
+                        'sentence_count': sentence_count
+                    })
+
+                except Exception as e:
+                    results['errors'] += 1
+                    results['details'].append({
+                        'row_id': row_id,
+                        'error': str(e)
+                    })
+
+            return results
+
         except Exception as e:
-            logger.error(f"Error in sync process: {str(e)}")
             return {
-                "status": "error",
-                "message": str(e)
-            } 
+                'error': str(e),
+                'total_rows_processed': results.get('total_rows_processed', 0),
+                'rows_updated': results.get('rows_updated', 0),
+                'errors': results.get('errors', 0) + 1,
+                'details': results.get('details', [])
+            }
+
+
+
