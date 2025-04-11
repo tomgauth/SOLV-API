@@ -32,7 +32,7 @@ jobs:
           usedocker: false
           stack: "heroku-22"
           procfile: "web: gunicorn app:app\nworker: python automation_runner.py"
-          healthcheck: "https://${{ secrets.HEROKU_APP_NAME }}.herokuapp.com/health"
+          healthcheck: "https://solv-api-e40b68cde717.herokuapp.com/health"
           env: 
             CODA_API_TOKEN: ${{ secrets.CODA_API_TOKEN }}
             MAIN_DOC_URL: ${{ secrets.MAIN_DOC_URL }}
