@@ -1,5 +1,6 @@
 from typing import Dict, Type
 from .base_service import BaseService
+from .text_to_speech_service import TextToSpeechService
 
 class ServiceRegistry:
     """Registry for all services in the application."""
@@ -21,4 +22,7 @@ class ServiceRegistry:
     @classmethod
     def list_services(cls) -> Dict[str, Type[BaseService]]:
         """List all registered services."""
-        return cls._services.copy() 
+        return cls._services.copy()
+
+# Register the Text-to-Speech service
+ServiceRegistry.register('text_to_speech', TextToSpeechService()) 
